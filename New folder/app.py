@@ -30,7 +30,7 @@ def home():
 def login():
     if request.method == 'POST':
         pw = request.form.get('password')
-        if pw == '1234':  # ✅ Change this to your shared password
+        if pw == '4234':  # ✅ Change this to your shared password
             session['logged_in'] = True
             return redirect(url_for('home'))
         else:
@@ -80,3 +80,8 @@ def upload():
 
 if __name__ == '__main__':
     app.run(debug=True)
+import os
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
