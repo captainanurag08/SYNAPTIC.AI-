@@ -78,8 +78,7 @@ def upload():
 
     return redirect(url_for('home'))
 
-if __name__ == '__main__':
-    app.run(debug=True)
+
 import os
 
 if __name__ == "__main__":
