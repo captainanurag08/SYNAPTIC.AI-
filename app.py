@@ -1,86 +1,140 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-import os, json
 from werkzeug.utils import secure_filename
+import os
+import sqlite3
+from datetime import datetime
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'  # You can change this
+app.secret_key = 'your_secret_key'
+
+# Ensure upload folder exists
 UPLOAD_FOLDER = 'static/uploads'
-MESSAGE_FILE = 'messages.json'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+DATABASE = 'database.db'
 
+# Initialize database
+def init_db():
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                relation TEXT,
+                message TEXT,
+                filename TEXT,
+                ip TEXT,
+                device TEXT,
+                timestamp TEXT
+            )
+        ''')
+        conn.commit()
+
+init_db()
+
+# Home route
 @app.route('/')
 def home():
-    if 'logged_in' not in session:
-        return redirect(url_for('login'))
-    files = os.listdir(app.config['UPLOAD_FOLDER'])
-    if os.path.exists(MESSAGE_FILE):
-        with open(MESSAGE_FILE, 'r') as f:
-            messages = json.load(f)
-    else:
-        messages = {}
-    return render_template('index.html', files=files, messages=messages)
+    return render_template('home.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
+# User login (GET shows form, POST logs in)
+@app.route('/user_login', methods=['GET', 'POST'])
+def user_login():
     if request.method == 'POST':
-        pw = request.form.get('password')
-        if pw == '4234':  # ✅ Change this to your shared password
-            session['logged_in'] = True
-            return redirect(url_for('home'))
-        else:
-            return "❌ Incorrect password"
-    return """
-    <form method='POST'>
-        <h2>Enter Shared Password</h2>
-        <input type='password' name='password' placeholder='Password'>
-        <button type='submit'>Enter</button>
-    </form>
-    """
+        session['name'] = request.form['name']
+        session['relation'] = request.form['relation']
+        return redirect(url_for('user_dashboard'))
+    return render_template('user_login.html')
 
-@app.route('/logout')
-def logout():
-    session.pop('logged_in', None)
-    return redirect(url_for('login'))
+# User dashboard – view & upload
+@app.route('/user_dashboard', methods=['GET', 'POST'])
+def user_dashboard():
+    if 'name' not in session:
+        return redirect(url_for('user_login'))
 
-@app.route('/upload', methods=['POST'])
-def upload():
-    if 'photo' not in request.files:
-        return redirect(url_for('home'))
+    name = session['name']
+    relation = session.get('relation', 'Friend')
 
-    photo = request.files['photo']
-    name = request.form.get('name', 'Anonymous')
-    message = request.form.get('message', '')
+    if request.method == 'POST':
+        message = request.form['message']
+        file = request.files['photo']
+        filename = ''
 
-    if photo and allowed_file(photo.filename):
-        filename = secure_filename(photo.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        photo.save(filepath)
+        if file and file.filename:
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(filepath)
 
-        if os.path.exists(MESSAGE_FILE):
-            with open(MESSAGE_FILE, 'r') as f:
-                messages = json.load(f)
-        else:
-            messages = {}
+        ip = request.remote_addr
+        device = request.headers.get('User-Agent')
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        messages[filename] = {
-            'name': name,
-            'message': message
+        with sqlite3.connect(DATABASE) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO users (name, relation, message, filename, ip, device, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (name, relation, message, filename, ip, device, timestamp))
+            conn.commit()
+
+    # Show user’s own uploads
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT message, filename, timestamp
+            FROM users
+            WHERE name = ?
+            ORDER BY timestamp DESC
+        ''', (name,))
+        rows = cursor.fetchall()
+
+    user_entries = [
+        {'message': row[0], 'filename': row[1], 'timestamp': row[2]}
+        for row in rows
+    ]
+
+    return render_template('user_dashboard.html', name=name, user_entries=user_entries)
+
+# Admin login
+@app.route('/admin_login', methods=['GET', 'POST'])
+def admin_login():
+    if request.method == 'POST':
+        password = request.form['password']
+        if password == 'anurag08':
+            session['admin'] = True
+            return redirect(url_for('admin_dashboard'))
+    return render_template('admin_login.html')
+
+# Admin dashboard – view all uploads
+@app.route('/admin_dashboard')
+def admin_dashboard():
+    if not session.get('admin'):
+        return redirect(url_for('admin_login'))
+
+    with sqlite3.connect(DATABASE) as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT name, relation, message, filename, ip, device, timestamp
+            FROM users
+            ORDER BY timestamp DESC
+        ''')
+        rows = cursor.fetchall()
+
+    entries = [
+        {
+            'name': row[0],
+            'relation': row[1],
+            'message': row[2],
+            'filename': row[3],
+            'ip': row[4],
+            'device': row[5],
+            'timestamp': row[6]
         }
+        for row in rows
+    ]
 
-        with open(MESSAGE_FILE, 'w') as f:
-            json.dump(messages, f)
+    return render_template('admin_dashboard.html', entries=entries)
 
-    return redirect(url_for('home'))
-
-
-import os
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    app.run(debug=True)
