@@ -1,0 +1,44 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Dashboard</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #ccc; }
+    img { max-width: 100px; }
+  </style>
+</head>
+<body>
+  <h2>All User Submissions</h2>
+  <table>
+    <tr>
+      <th>Name</th>
+      <th>Relation</th>
+      <th>Message</th>
+      <th>Photo</th>
+      <th>IP</th>
+      <th>Device Info</th>
+      <th>Time</th>
+    </tr>
+    {% for entry in entries %}
+    <tr>
+      <td>{{ entry['name'] }}</td>
+      <td>{{ entry['relation'] }}</td>
+      <td>{{ entry['message'] }}</td>
+      <td>
+        {% if entry['filename'] %}
+          <img src="{{ url_for('static', filename='uploads/' + entry['filename']) }}">
+        {% endif %}
+      </td>
+      <td>{{ entry['ip'] }}</td>
+      <td>{{ entry['device'] }}</td>
+      <td>{{ entry['timestamp'] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
